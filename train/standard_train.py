@@ -1,5 +1,4 @@
 import torch
-from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 import os
 import sys
@@ -8,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lera.model.standard_model import Model
 from train.utils import Metrics, LRScheduler
+from data.parquet_dataloader import get_dataloader
 from tokenizers import Tokenizer
 from torch.optim import AdamW
 from tqdm import tqdm
@@ -16,8 +16,8 @@ _use_amp = True
 _use_scaler = True
 EPOCHS = 3
 tokenizer = Tokenizer.from_file("tokenizer/tokenizer.json")
-D_MODEL = 512
-N_HEADS = 12
+D_MODEL = 16
+N_HEADS = 1
 VOCAB_SIZE = len(tokenizer.get_vocab())
 OUTPUT_DIM = 1001 # 1001 # [-500, 500]
 MAX_SEQ_LEN = 2048
@@ -41,24 +41,14 @@ Model configuration:
 """)
 print(f"Model: {model}")
 
-class DummyDataset(Dataset):
-    def __init__(self, num_samples=320, seq_len=24):
-        self.num_samples = num_samples
-        self.seq_len = seq_len
-        # Generate fixed data once for overfitting test
-        self.data = [(torch.randint(0, VOCAB_SIZE, (self.seq_len,)), 
-                      torch.randint(0, OUTPUT_DIM, ())) 
-                     for _ in range(num_samples)]
-    
-    def __len__(self):
-        return self.num_samples
-    
-    def __getitem__(self, idx):
-        x, y = self.data[idx]
-        return x.to(DEVICE), y.to(DEVICE)
-
-dataset = DummyDataset()
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+# Load bucketed parquet dataloader
+dataloader = get_dataloader(
+    data_dir="data/pretraining/tokenized",
+    batch_size=32,
+    shuffle=True,
+    device=DEVICE,
+    drop_last=False
+)
 
 # Learning rate scheduler configuration
 TOTAL_STEPS = EPOCHS * len(dataloader)
@@ -82,14 +72,14 @@ for epoch in range(EPOCHS):
         optimizer.zero_grad()
         
         with torch.autocast(device_type=DEVICE.type, dtype=torch.bfloat16, enabled=_use_amp):
-            x, y = batch
-            y_hat = model(x)
+            input_ids, attention_mask, answer_token = batch
+            y_hat = model(input_ids)
             loss = F.cross_entropy(
-                y_hat, y, reduction="mean"
+                y_hat, answer_token, reduction="mean"
             )
         
         predictions = torch.argmax(y_hat, dim=-1)
-        correct = (predictions == y).float()
+        correct = (predictions == answer_token).float()
         batch_accuracy = correct.mean().item()
         metrics.update(loss.item(), batch_accuracy, optimizer, pbar, scheduler)
         
