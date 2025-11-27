@@ -16,12 +16,12 @@ _use_amp = True
 _use_scaler = True
 EPOCHS = 3
 tokenizer = Tokenizer.from_file("tokenizer/tokenizer.json")
-D_MODEL = 512
+D_MODEL = 1024
 N_HEADS = 8
 VOCAB_SIZE = len(tokenizer.get_vocab())
 OUTPUT_DIM = 1001 # 1001 # [-500, 500]
 MAX_SEQ_LEN = 2048
-DEPTH = 12
+DEPTH = 24
 model = Model(D_MODEL, N_HEADS, VOCAB_SIZE, OUTPUT_DIM, MAX_SEQ_LEN, DEPTH)
 optimizer = AdamW(model.parameters(), lr=0.001)
 DEVICE = model.device
