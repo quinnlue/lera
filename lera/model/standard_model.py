@@ -36,4 +36,4 @@ class Model(nn.Module):
         
         for transformer_block in self.transformer_blocks:
             x = transformer_block(x, attn_mask=attn_mask)
-        return self.decoder(x[:, -1, :])
+        return self.decoder(x[:, 0, :])
