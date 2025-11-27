@@ -132,6 +132,9 @@ dmypy.json
 
 # Data folder (ignore everything)
 data/
+# But keep Python files in data folder
+!data/**/*.py
+!data/*.py
 
 # parquet files
 *.parquet
