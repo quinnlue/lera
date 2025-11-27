@@ -22,8 +22,18 @@ class Model(nn.Module):
         self.to(self.device)
 
 
-    def forward(self, x):
+    def forward(self, x, attention_mask=None):
         x = self.encoder(x)
+        
+        # Convert attention_mask to format expected by scaled_dot_product_attention
+        # Input mask: (batch_size, seq_len) with 1=attend, 0=ignore
+        # Output mask: (batch_size, 1, 1, seq_len) with True=attend, False=ignore
+        attn_mask = None
+        if attention_mask is not None:
+            attn_mask = attention_mask.bool()  # Convert to boolean
+            # Expand to (batch_size, 1, 1, seq_len) for broadcasting across heads and queries
+            attn_mask = attn_mask.unsqueeze(1).unsqueeze(2)
+        
         for transformer_block in self.transformer_blocks:
-            x = transformer_block(x)
+            x = transformer_block(x, attn_mask=attn_mask)
         return self.decoder(x[:, -1, :])

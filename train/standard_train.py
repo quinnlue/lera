@@ -73,7 +73,7 @@ for epoch in range(EPOCHS):
         
         with torch.autocast(device_type=DEVICE.type, dtype=torch.bfloat16, enabled=_use_amp):
             input_ids, attention_mask, answer_token = batch
-            y_hat = model(input_ids)
+            y_hat = model(input_ids, attention_mask=attention_mask)
             loss = F.cross_entropy(
                 y_hat, answer_token, reduction="mean"
             )
