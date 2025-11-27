@@ -3,6 +3,7 @@ import time
 import os
 import warnings
 import logging
+import math
 from typing import Tuple, Optional
 
 class RunningLossTracker:
@@ -98,7 +99,7 @@ class ProgressBarManager:
         self.loss_tracker = RunningLossTracker()
         self.accuracy_tracker = RunningLossTracker()
     
-    def update_progress(self, loss_value: float, accuracy_value, optimizer, pbar) -> None:
+    def update_progress(self, loss_value: float, accuracy_value, optimizer, pbar, scheduler=None) -> None:
         self.current_step += 1
         self.loss_tracker.update(loss_value)
         self.accuracy_tracker.update(accuracy_value)
@@ -108,7 +109,10 @@ class ProgressBarManager:
         steps_per_sec = calculate_steps_per_sec(self.current_step, self.start_time)
         fraction = format_fraction(self.current_step, self.total_steps)
         
-        current_lr = 0.1 #optimizer.get_lr(optimizer.t)
+        if scheduler is not None:
+            current_lr = scheduler.get_last_lr()[0]
+        else:
+            current_lr = optimizer.param_groups[0]['lr']
         
         pbar.set_postfix(
             L100=f"{running_100_loss:.4f}",
@@ -141,8 +145,8 @@ class Metrics:
         self.row_buffer = []
         self.pbar_manager = ProgressBarManager(self.total_steps, time.perf_counter())
 
-    def update(self, loss, accuracy, optimizer, pbar):
-        self.pbar_manager.update_progress(loss, accuracy, optimizer, pbar)
+    def update(self, loss, accuracy, optimizer, pbar, scheduler=None):
+        self.pbar_manager.update_progress(loss, accuracy, optimizer, pbar, scheduler)
 
         self.row_buffer.append({
             "step": self.pbar_manager.current_step,
@@ -157,4 +161,84 @@ class Metrics:
                     self.logger.info(f"{row['step']},{row['loss']:.6f},{row['accuracy']:.6f}")
                 self.row_buffer.clear()
 
+
+class LRScheduler:
+    """Learning rate scheduler with warmup and cosine annealing.
+    
+    Supports:
+    - Linear warmup from 0 to max_lr over warmup_steps
+    - Cosine annealing from max_lr to min_lr over total_steps - warmup_steps
+    """
+    
+    def __init__(
+        self,
+        optimizer,
+        max_lr: float,
+        total_steps: int,
+        warmup_steps: int = 0,
+        min_lr: float = 0.0,
+        last_epoch: int = -1
+    ):
+        """Initialize the learning rate scheduler.
         
+        Args:
+            optimizer: The optimizer to schedule
+            max_lr: Maximum learning rate (peak after warmup)
+            total_steps: Total number of training steps
+            warmup_steps: Number of warmup steps (linear increase from 0 to max_lr)
+            min_lr: Minimum learning rate (final value after cosine decay)
+            last_epoch: The index of last epoch (for resuming training)
+        """
+        self.optimizer = optimizer
+        self.max_lr = max_lr
+        self.total_steps = total_steps
+        self.warmup_steps = warmup_steps
+        self.min_lr = min_lr
+        self.last_epoch = last_epoch
+        self.base_lrs = [group['lr'] for group in optimizer.param_groups]
+        
+        # Initialize learning rates
+        self._update_lr(0)
+    
+    def _update_lr(self, step: int):
+        """Update learning rate based on current step."""
+        if step < self.warmup_steps:
+            # Linear warmup
+            lr = self.max_lr * (step / max(self.warmup_steps, 1))
+        else:
+            # Cosine annealing
+            progress = (step - self.warmup_steps) / max(self.total_steps - self.warmup_steps, 1)
+            lr = self.min_lr + (self.max_lr - self.min_lr) * 0.5 * (1 + math.cos(math.pi * progress))
+        
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+    
+    def step(self, epoch=None):
+        """Update learning rate for the next step."""
+        self.last_epoch += 1
+        self._update_lr(self.last_epoch)
+    
+    def get_last_lr(self):
+        """Get the last computed learning rate."""
+        return [group['lr'] for group in self.optimizer.param_groups]
+    
+    def state_dict(self):
+        """Return state dict for checkpointing."""
+        return {
+            'last_epoch': self.last_epoch,
+            'max_lr': self.max_lr,
+            'total_steps': self.total_steps,
+            'warmup_steps': self.warmup_steps,
+            'min_lr': self.min_lr,
+            'base_lrs': self.base_lrs,
+        }
+    
+    def load_state_dict(self, state_dict):
+        """Load state dict from checkpoint."""
+        self.last_epoch = state_dict['last_epoch']
+        self.max_lr = state_dict['max_lr']
+        self.total_steps = state_dict['total_steps']
+        self.warmup_steps = state_dict['warmup_steps']
+        self.min_lr = state_dict['min_lr']
+        self.base_lrs = state_dict['base_lrs']
+        self._update_lr(self.last_epoch)

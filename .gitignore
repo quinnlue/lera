@@ -133,6 +133,9 @@ dmypy.json
 # Data folder (ignore everything)
 data/
 
+# parquet files
+*.parquet
+
 # But keep tokenizer.json
 !tokenizer/tokenizer.json
 
