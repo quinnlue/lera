@@ -16,8 +16,8 @@ _use_amp = True
 _use_scaler = True
 EPOCHS = 3
 tokenizer = Tokenizer.from_file("tokenizer/tokenizer.json")
-D_MODEL = 16
-N_HEADS = 1
+D_MODEL = 512
+N_HEADS = 8
 VOCAB_SIZE = len(tokenizer.get_vocab())
 OUTPUT_DIM = 1001 # 1001 # [-500, 500]
 MAX_SEQ_LEN = 2048
@@ -77,15 +77,17 @@ for epoch in range(EPOCHS):
             loss = F.cross_entropy(
                 y_hat, answer_token, reduction="mean"
             )
-        
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+        if DEVICE.type == "cuda":
+            torch.cuda.synchronize()
+
         predictions = torch.argmax(y_hat, dim=-1)
         correct = (predictions == answer_token).float()
         batch_accuracy = correct.mean().item()
         metrics.update(loss.item(), batch_accuracy, optimizer, pbar, scheduler)
         
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
 
 
 

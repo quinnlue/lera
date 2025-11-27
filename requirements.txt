@@ -1,0 +1,10 @@
+pandas
+pyarrow
+fastparquet
+tokenizers
+torch
+torchvision
+torchaudio
+tqdm
+numpy
+matplotlib
